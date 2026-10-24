@@ -35,6 +35,8 @@ Firmware güncellemesi ve ekran görseli yükleme **yoktur**; bunlar için üret
 
 ![Performans](docs/screenshot-performance.png)
 
+![Advanced keys (English UI)](docs/screenshot-advanced-en.png)
+
 ## İndirme ve kullanım
 
 1. [Releases](../../releases/latest) sayfasından `Slice75HE.exe`'yi indirin ve çalıştırın. Kurulum gerekmez
@@ -50,12 +52,17 @@ Makrolar klavyeden geri okunamadığı için `%APPDATA%\Slice75HE\macros.txt` do
 Program dijital olarak imzalı olmadığı için Windows SmartScreen ilk açılışta bu uyarıyı gösterebilir.
 **Ek bilgi → Yine de çalıştır** ile açabilirsiniz. Program internete bağlanmaz ve hiçbir şey kurmaz.
 
+**Microsoft Defender uyarısı:** Defender'ın bulut tarafındaki yapay zekâ modeli bu dosyayı
+`Trojan:Win32/Wacatac.B!ml` olarak işaretleyebilir. Sondaki `!ml`, belirli bir virüs imzası değil, makine
+öğrenmesi tahmini olduğunu gösterir; imzasız ve yeni yayınlanmış programlarda sık görülen bir yanlış alarmdır.
+Yerel Defender taraması temiz çıkıyor; yanlış alarm bildirimi Microsoft'a iletilmektedir.
+
 Dosyayı kendiniz kontrol etmek isterseniz:
 
 - **VirusTotal taraması:** [Slice75HE.exe v0.2.0](https://www.virustotal.com/gui/file/aa32cce4806809edcfe262522697791c20931aaecaabf639e72a61b4735a11ea)
 - **SHA-256:** `aa32cce4806809edcfe262522697791c20931aaecaabf639e72a61b4735a11ea`
   (PowerShell: `Get-FileHash Slice75HE.exe`)
-- Kaynak kodun tamamı bu repoda; exe her sürümde GitHub Actions ile de derlenir.
+- Kaynak kodun tamamı bu repoda; exe'yi kendiniz de derleyebilirsiniz (aşağıya bakın).
 
 ## Durum
 
@@ -99,6 +106,9 @@ installer). If SmartScreen says "Windows protected your PC", click **More info �
 code-signed yet. You can check it on
 [VirusTotal](https://www.virustotal.com/gui/file/aa32cce4806809edcfe262522697791c20931aaecaabf639e72a61b4735a11ea)
 or compare its SHA-256 (`aa32cce4806809edcfe262522697791c20931aaecaabf639e72a61b4735a11ea`).
+Microsoft Defender's cloud machine-learning model may flag it as `Trojan:Win32/Wacatac.B!ml`; this is a known
+false positive for new unsigned executables (the `!ml` suffix means a model prediction, not a signature match)
+and is being reported to Microsoft. A local Defender scan comes back clean.
 
 **Status:** tested on Slice75 HE firmware App V1.1.7 / protocol 1.0.7. Every write operation is verified on
 hardware by the built-in self-test (`Slice75HE.exe --selftest selftest.log`). Protocol notes are in
