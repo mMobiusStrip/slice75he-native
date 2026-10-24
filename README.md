@@ -55,7 +55,7 @@ Program dijital olarak imzalı olmadığı için Windows SmartScreen ilk açıl�
 **Microsoft Defender uyarısı:** Defender'ın bulut tarafındaki yapay zekâ modeli bu dosyayı
 `Trojan:Win32/Wacatac.B!ml` olarak işaretleyebilir. Sondaki `!ml`, belirli bir virüs imzası değil, makine
 öğrenmesi tahmini olduğunu gösterir; imzasız ve yeni yayınlanmış programlarda sık görülen bir yanlış alarmdır.
-Yerel Defender taraması temiz çıkıyor; yanlış alarm bildirimi Microsoft'a iletilmektedir.
+Yanlış alarm Microsoft'a bildirildi (25.10.2026) ve inceleme bekleniyor.
 
 Dosyayı kendiniz kontrol etmek isterseniz:
 
@@ -108,7 +108,7 @@ code-signed yet. You can check it on
 or compare its SHA-256 (`aa32cce4806809edcfe262522697791c20931aaecaabf639e72a61b4735a11ea`).
 Microsoft Defender's cloud machine-learning model may flag it as `Trojan:Win32/Wacatac.B!ml`; this is a known
 false positive for new unsigned executables (the `!ml` suffix means a model prediction, not a signature match)
-and is being reported to Microsoft. A local Defender scan comes back clean.
+and has been reported to Microsoft (review pending).
 
 **Status:** tested on Slice75 HE firmware App V1.1.7 / protocol 1.0.7. Every write operation is verified on
 hardware by the built-in self-test (`Slice75HE.exe --selftest selftest.log`). Protocol notes are in
