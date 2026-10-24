@@ -7,7 +7,9 @@
 #include <hidsdi.h>
 
 #include "app.h"
+#include "i18n.h"
 #include "imgui.h"
+#include "version.h"
 #include "imgui_impl_dx11.h"
 #include "imgui_impl_win32.h"
 
@@ -26,6 +28,8 @@ UINT g_resizeW = 0, g_resizeH = 0;
 bool g_minimized = false;
 DWORD g_lastActivity = 0;
 float g_dpiScale = 1.0f;
+bool g_fontReload = false;
+bool g_freeFontInput = false;  // drop TTF data once the atlas texture exists (CJK font files are ~20 MB)
 
 void CreateRenderTarget() {
     ID3D11Texture2D* back = nullptr;
@@ -71,15 +75,30 @@ void CleanupDeviceD3D() {
 void LoadFonts(float scale) {
     ImGuiIO& io = ImGui::GetIO();
     io.Fonts->Clear();
-    // Latin + Latin Extended-A covers Turkish (ğ, ş, ı, İ); arrows/symbols used by key labels.
-    static const ImWchar ranges[] = {0x0020, 0x017F, 0x2010, 0x2027, 0x2190, 0x21FF,
-                                     0x2300, 0x23FF, 0x25A0, 0x25FF, 0};
+    // Latin + Latin Extended-A covers Turkish and German; arrows/symbols are used by key labels. CJK glyphs are
+    // added only for the characters the active language actually uses, which keeps the atlas small.
+    static const ImWchar kBase[] = {0x0020, 0x017F, 0x2010, 0x2027, 0x2190, 0x21FF, 0x2300, 0x23FF,
+                                    0x25A0, 0x25FF, 0x3000, 0x303F, 0xFF01, 0xFF5E, 0};
+    static ImVector<ImWchar> ranges;
+    ranges.clear();
+    ImFontGlyphRangesBuilder builder;
+    builder.AddRanges(kBase);
+    builder.AddText(I18nGlyphText().c_str());
+    builder.BuildRanges(&ranges);
+
     ImFontConfig cfg;
     cfg.OversampleH = 2;
-    if (!io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 16.0f * scale, &cfg, ranges)) {
+    if (!io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 16.0f * scale, &cfg, ranges.Data)) {
         cfg.SizePixels = 13.0f * scale;
         io.Fonts->AddFontDefault(&cfg);
     }
+    if (const char* cjk = I18nCjkFontPath()) {
+        ImFontConfig merge;
+        merge.MergeMode = true;
+        merge.OversampleH = 1;
+        io.Fonts->AddFontFromFileTTF(cjk, 16.0f * scale, &merge, ranges.Data);  // fills only missing glyphs
+    }
+    g_freeFontInput = true;
     ImGui::GetStyle() = ImGuiStyle();
     AppApplyStyle();
     ImGui::GetStyle().ScaleAllSizes(scale);
@@ -97,6 +116,12 @@ void Render() {
     g_context->ClearRenderTargetView(g_rtv, clear);
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
     g_swapChain->Present(1, 0);
+
+    if (g_freeFontInput) {  // the GPU texture now holds the glyphs; the source data is no longer needed
+        g_freeFontInput = false;
+        ImGui::GetIO().Fonts->ClearInputData();
+        ImGui::GetIO().Fonts->ClearTexData();
+    }
 }
 
 LRESULT WINAPI WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -158,7 +183,13 @@ LRESULT WINAPI WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 void AppRequestRedraw() { g_lastActivity = GetTickCount(); }
 
+void AppRequestFontReload() {
+    g_fontReload = true;
+    AppRequestRedraw();
+}
+
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int showCmd) {
+    AppEarlyInit();
     WNDCLASSEXW wc{sizeof(wc)};
     wc.style = CS_CLASSDC;
     wc.lpfnWndProc = WndProc;
@@ -169,7 +200,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int showCmd) {
     RegisterClassExW(&wc);
 
     g_dpiScale = GetDpiForSystem() / 96.0f;
-    HWND hwnd = CreateWindowExW(0, wc.lpszClassName, L"Slice75 HE", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+    HWND hwnd = CreateWindowExW(0, wc.lpszClassName, L"Slice75 HE Native " TEXT(APP_VERSION_STR), WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
                                 static_cast<int>(1280 * g_dpiScale), static_cast<int>(900 * g_dpiScale), nullptr,
                                 nullptr, inst, nullptr);
     g_dpiScale = GetDpiForWindow(hwnd) / 96.0f;
@@ -178,7 +209,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int showCmd) {
     DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
 
     if (!CreateDeviceD3D(hwnd)) {
-        MessageBoxW(hwnd, L"Direct3D 11 başlatılamadı.", L"Slice75 HE", MB_ICONERROR);
+        MessageBoxA(hwnd, T("Direct3D 11 başlatılamadı."), "Slice75 HE", MB_ICONERROR);
         return 1;
     }
 
@@ -225,6 +256,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int showCmd) {
         if (g_minimized) {
             WaitMessage();
             continue;
+        }
+        if (g_fontReload) {  // language changed: rebuild the atlas before the next frame starts
+            g_fontReload = false;
+            LoadFonts(g_dpiScale);
+            ImGui_ImplDX11_InvalidateDeviceObjects();
         }
         if (g_resizeW != 0 && g_resizeH != 0) {
             CleanupRenderTarget();

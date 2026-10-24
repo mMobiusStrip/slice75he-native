@@ -35,7 +35,7 @@ $libs = 'd3d11.lib d3dcompiler.lib dxgi.lib hid.lib setupapi.lib user32.lib gdi3
 $rc = Join-Path $root 'src\app.rc'
 $res = Join-Path $obj 'app.res'
 $src = ($sources | ForEach-Object { "`"$_`"" }) -join ' '
-$cmd = "`"$vcvars`" >nul && rc /nologo /fo `"$res`" `"$rc`" && " +
+$cmd = "`"$vcvars`" >nul && rc /nologo /c 65001 /fo `"$res`" `"$rc`" && " +
        "cl $cflags $src `"$res`" /Fe`"$bin\Slice75HE.exe`" /link /SUBSYSTEM:WINDOWS $libs"
 cmd /c $cmd
 if ($LASTEXITCODE -ne 0) { throw "Build failed ($LASTEXITCODE)" }

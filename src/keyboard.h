@@ -135,6 +135,8 @@ public:
     void ReloadAll();
     void ReadKeyFields();
     void ReadAdvanced(uint8_t kv);
+    void ReadFields(uint8_t kv, const std::vector<uint8_t>& fields);  // up to 14 fields of one key
+    unsigned LiveFrames() const { return liveFrames_; }
     void WriteKeyRecords(const std::vector<proto::KeyRecord>& recs);
     void WriteMainLight();
     void WriteLogoLight();
@@ -182,4 +184,5 @@ private:
     std::deque<uint8_t> pendingHalves_[7];  // requested halves per RM6X21 sub-command
     uint8_t nextHalf_ = 1;
     DWORD lastLiveAt_ = 0;
+    unsigned liveFrames_ = 0;
 };

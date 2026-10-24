@@ -19,3 +19,7 @@ bool AppOnKey(UINT msg, WPARAM wParam, LPARAM lParam);
 
 // Implemented by the host: keeps frames coming for a short while.
 void AppRequestRedraw();
+// Implemented by the host: rebuilds the font atlas before the next frame (after a language change).
+void AppRequestFontReload();
+// Called before the window is created so the first font atlas already matches the saved language.
+void AppEarlyInit();

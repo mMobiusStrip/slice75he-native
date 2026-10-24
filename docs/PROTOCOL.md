@@ -148,7 +148,7 @@ protocol ≥ 1.0.3 keycodes are u16, otherwise u8.
 
 | cmd | body after the key id |
 |---|---|
-| DKS `0x26` | 4 keycodes, 4 trigger masks (u8), depth 1 u16, depth 2 u16 |
+| DKS `0x26` | 4 keycodes, 4 trigger masks (u8), depth 1 u16, depth 2 u16 — read back as field 5 = depth 1, field 7 = depth 2, field 6 = their midpoint (verified) |
 | MPT `0x27` | 3 keycodes, 3 depths u16 |
 | MT `0x24` | hold keycode, tap keycode, hold time (u8, 10 ms units) |
 | TGL `0x25` | keycode, hold time (u8, 10 ms units) |

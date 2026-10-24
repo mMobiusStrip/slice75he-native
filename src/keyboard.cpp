@@ -447,6 +447,7 @@ void Keyboard::HandleLight(const uint8_t* a, LightState& s) {
 void Keyboard::HandleLive(const uint8_t* a) {
     const uint8_t sub = a[1];
     const uint8_t* d = a + 2;
+    ++liveFrames_;
     auto popHalf = [&](int s) -> uint8_t {
         if (pendingHalves_[s].empty()) return 1;
         uint8_t h = pendingHalves_[s].front();
@@ -524,6 +525,13 @@ void Keyboard::ReadKeyFields() {
             ++st_.keysTotalPackets;
         }
     }
+}
+
+void Keyboard::ReadFields(uint8_t kv, const std::vector<uint8_t>& fields) {
+    KeyRecord recs[kMaxKeyRecords];
+    size_t n = std::min<size_t>(fields.size(), kMaxKeyRecords);
+    for (size_t i = 0; i < n; ++i) recs[i] = {kv, fields[i], 0};
+    Send(KeyPack(false, recs, n), 2);
 }
 
 void Keyboard::WriteKeyRecords(const std::vector<KeyRecord>& recs) {

@@ -2,12 +2,14 @@
 // and queues the matching write packets.
 #include "app.h"
 
+#include <shellapi.h>
 #include <shlobj.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <functional>
 #include <set>
 #include <sstream>
 #include <string>
@@ -16,7 +18,9 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui.h"
 #include "keyboard.h"
+#include "i18n.h"
 #include "keycodes.h"
+#include "version.h"
 
 using namespace proto;
 
@@ -127,7 +131,7 @@ void HelpMarker(const char* text) {
     ImGui::TextDisabled("(?)");
     if (ImGui::BeginItemTooltip()) {
         ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
-        ImGui::TextUnformatted(text);
+        ImGui::TextUnformatted(T(text));
         ImGui::PopTextWrapPos();
         ImGui::EndTooltip();
     }
@@ -136,16 +140,36 @@ void HelpMarker(const char* text) {
 // ---------------------------------------------------------------------------------------------------------------
 // Macro library (stored locally; the keyboard cannot return macro bodies)
 
-std::wstring MacroFile() {
+std::wstring AppDataFile(const wchar_t* name) {
     PWSTR base = nullptr;
     std::wstring path;
     if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &base))) {
         path = std::wstring(base) + L"\\Slice75HE";
         CreateDirectoryW(path.c_str(), nullptr);
-        path += L"\\macros.txt";
+        path += L"\\";
+        path += name;
     }
     CoTaskMemFree(base);
     return path;
+}
+
+std::wstring MacroFile() { return AppDataFile(L"macros.txt"); }
+
+// settings.txt holds simple key=value lines.
+void SaveSettings() {
+    std::ofstream f(AppDataFile(L"settings.txt"), std::ios::binary | std::ios::trunc);
+    f << "lang=" << LangCode(GetLanguage()) << "\n";
+}
+
+void LoadSettings() {
+    SetLanguage(DefaultLanguage());
+    std::ifstream f(AppDataFile(L"settings.txt"), std::ios::binary);
+    std::string line;
+    while (std::getline(f, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        Lang lang;
+        if (line.rfind("lang=", 0) == 0 && LangFromCode(line.substr(5), &lang)) SetLanguage(lang);
+    }
 }
 
 void SaveMacros() {
@@ -509,27 +533,27 @@ void SelectionToolbar() {
         }
         if (!g_sel.empty()) g_anchor = *g_sel.begin();
     };
-    if (ImGui::SmallButton("Tümünü seç")) {
+    if (ImGui::SmallButton(T("Tümünü seç"))) {
         for (uint8_t kv : s.AllKeys()) g_sel.insert(kv);
     }
     ImGui::SameLine();
-    if (ImGui::SmallButton("Seçimi temizle")) g_sel.clear();
+    if (ImGui::SmallButton(T("Seçimi temizle"))) g_sel.clear();
     ImGui::SameLine();
     if (ImGui::SmallButton("WASD")) selectCodes({0x1A, 0x04, 0x16, 0x07});
     ImGui::SameLine();
-    if (ImGui::SmallButton("Harfler")) {
+    if (ImGui::SmallButton(T("Harfler"))) {
         g_sel.clear();
         for (uint8_t kv = 0x04; kv <= 0x1D; ++kv) {
             if (s.keys[kv].present) g_sel.insert(kv);
         }
     }
     ImGui::SameLine();
-    ImGui::TextDisabled("%zu tuş seçili  ·  Ctrl+tık: ekle/çıkar", Selected().size());
+    ImGui::TextDisabled(T("%zu tuş seçili  ·  Ctrl+tık: ekle/çıkar"), Selected().size());
     if (g_pickTarget) {
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1, 0.7f, 0.2f, 1), "→ Eş tuşu klavyede tıklayın");
+        ImGui::TextColored(ImVec4(1, 0.7f, 0.2f, 1), T("→ Eş tuşu klavyede tıklayın"));
         ImGui::SameLine();
-        if (ImGui::SmallButton("Vazgeç")) g_pickTarget = nullptr;
+        if (ImGui::SmallButton(T("Vazgeç"))) g_pickTarget = nullptr;
     }
 }
 
@@ -544,7 +568,7 @@ bool StyledButton(const char* label, ImVec2 size, ImVec4 base) {
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(base.x * 0.85f, base.y * 0.85f, base.z * 0.85f, 1));
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
     if (size.y == 0) size.y = ImGui::GetFrameHeight() * 1.2f;
-    bool r = ImGui::Button(label, size);
+    bool r = ImGui::Button(T(label), size);
     ImGui::PopStyleColor(4);
     return r;
 }
@@ -558,7 +582,7 @@ bool DangerButton(const char* label, ImVec2 size = ImVec2(0, 0)) {
 }
 
 bool WideButton(const char* label) {
-    return ImGui::Button(label, ImVec2(-FLT_MIN, ImGui::GetFrameHeight() * 1.2f));
+    return ImGui::Button(T(label), ImVec2(-FLT_MIN, ImGui::GetFrameHeight() * 1.2f));
 }
 
 // Row of joined toggle buttons; returns true when the value changed.
@@ -574,7 +598,7 @@ bool Segmented(const char* id, const char* const* labels, int n, int* value, flo
         ImGui::PushStyleColor(ImGuiCol_Button, bg);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, sel ? bg : ImGui::GetColorU32(ImGuiCol_FrameBgHovered));
         ImGui::PushID(i);
-        if (ImGui::Button(labels[i], ImVec2(w, ImGui::GetFrameHeight() * 1.15f)) && !sel) {
+        if (ImGui::Button(T(labels[i]), ImVec2(w, ImGui::GetFrameHeight() * 1.15f)) && !sel) {
             *value = i;
             changed = true;
         }
@@ -606,7 +630,7 @@ bool ToggleRow(const char* label, bool* v, const char* help = nullptr) {
     const float avail = ImGui::GetContentRegionAvail().x;
     const float w = ImGui::GetFrameHeight() * 0.85f * 1.85f;
     ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(label);
+    ImGui::TextUnformatted(T(label));
     if (help) HelpMarker(help);
     ImGui::SameLine(startX + avail - w);
     return Toggle(label, v);
@@ -614,7 +638,7 @@ bool ToggleRow(const char* label, bool* v, const char* help = nullptr) {
 
 void CardTitle(const char* title) {
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-    ImGui::TextUnformatted(title);
+    ImGui::TextUnformatted(T(title));
     ImGui::PopStyleColor();
     ImGui::Spacing();
 }
@@ -648,7 +672,7 @@ void EndPage() { ImGui::EndTable(); }
 // Millimetre slider with its label above, filling the column.
 bool MmSlider(const char* label, uint16_t* um, int minUm, int maxUm, int stepUm) {
     ImGui::PushID(label);
-    ImGui::TextUnformatted(label);
+    ImGui::TextUnformatted(T(label));
     ImGui::SetNextItemWidth(-FLT_MIN);
     bool r = SliderMm("##s", um, minUm, maxUm, stepUm);
     ImGui::PopID();
@@ -695,10 +719,10 @@ bool OptionCard(const char* id, const char* title, const char* desc, bool select
         y += fs * 0.35f + 6;
     }
     ImGui::PushClipRect(p0, p1 - ImVec2(6, 0), true);
-    dl->AddText(ImVec2(p0.x + 10, y), ImGui::GetColorU32(ImGuiCol_Text), title);
+    dl->AddText(ImVec2(p0.x + 10, y), ImGui::GetColorU32(ImGuiCol_Text), T(title));
     if (desc && desc[0]) {
         dl->AddText(ImGui::GetFont(), fs * 0.85f, ImVec2(p0.x + 10, y + fs + 2), ImGui::GetColorU32(ImGuiCol_TextDisabled),
-                    desc, nullptr, size.x - 20);
+                    T(desc), nullptr, size.x - 20);
     }
     ImGui::PopClipRect();
     return clicked;
@@ -783,7 +807,7 @@ bool ColorEditPopup(const char* popupId, uint32_t* color) {
             }
             ImGui::PopID();
         }
-        if (ImGui::Button("Tamam", ImVec2(-FLT_MIN, 0))) ImGui::CloseCurrentPopup();
+        if (ImGui::Button(T("Tamam"), ImVec2(-FLT_MIN, 0))) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
     return committed;
@@ -843,13 +867,13 @@ bool KeyCodeGrid(const char* id, uint16_t* out, bool advanced) {
 // Button showing a keycode; opens a popup picker. Returns true when the code changed.
 bool KeyCodeButton(const char* id, uint16_t* code, float width = 0) {
     ImGui::PushID(id);
-    std::string label = *code ? KeyCodeLabel(*code) : std::string("— seç —");
+    std::string label = *code ? KeyCodeLabel(*code) : std::string(T("— seç —"));
     if (width <= 0) width = ImGui::GetFontSize() * 7;
     if (ImGui::Button((label + "###b").c_str(), ImVec2(width, ImGui::GetFrameHeight() * 1.1f))) ImGui::OpenPopup("pick");
     bool changed = false;
     ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 38, ImGui::GetFontSize() * 22));
     if (ImGui::BeginPopup("pick")) {
-        if (ImGui::Button("Boş bırak")) {
+        if (ImGui::Button(T("Boş bırak"))) {
             *code = 0;
             changed = true;
             ImGui::CloseCurrentPopup();
@@ -870,7 +894,7 @@ bool KeyCodeButton(const char* id, uint16_t* code, float width = 0) {
 
 void NoSelectionHint(const char* text) {
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-    ImGui::TextWrapped("%s", text);
+    ImGui::TextWrapped("%s", T(text));
     ImGui::PopStyleColor();
 }
 
@@ -895,18 +919,18 @@ void KeymapTab() {
 
     PageSide();
     BeginCard("keyinfo");
-    CardTitle("Seçili tuş");
+    CardTitle(T("Seçili tuş"));
     if (sel.empty() || !s.keys[g_anchor].present) {
-        NoSelectionHint("Klavye görselinden bir veya daha fazla tuş seçin, sonra soldan yeni görevini tıklayın.");
+        NoSelectionHint(T("Klavye görselinden bir veya daha fazla tuş seçin, sonra soldan yeni görevini tıklayın."));
     } else {
         const KeyState& k = s.keys[g_anchor];
         BigText(KeyCodeLabel(k.layers[g_layer]).c_str());
-        ImGui::TextDisabled("Fiziksel tuş: %s", KeyCodeLabel(g_anchor).c_str());
-        ImGui::TextDisabled("Katman: Fn%d", g_layer);
-        if (sel.size() > 1) ImGui::TextDisabled("%zu tuş seçili", sel.size());
-        if (k.advType != ADV_NONE) ImGui::TextDisabled("Gelişmiş: %s", kAdvNames[std::min<int>(k.advType, 9)]);
+        ImGui::TextDisabled(T("Fiziksel tuş: %s"), KeyCodeLabel(g_anchor).c_str());
+        ImGui::TextDisabled(T("Katman: Fn%d"), g_layer);
+        if (sel.size() > 1) ImGui::TextDisabled(T("%zu tuş seçili"), sel.size());
+        if (k.advType != ADV_NONE) ImGui::TextDisabled(T("Gelişmiş: %s"), T(kAdvNames[std::min<int>(k.advType, 9)]));
         ImGui::Spacing();
-        if (WideButton("Varsayılana döndür")) {
+        if (WideButton(T("Varsayılana döndür"))) {
             std::vector<KeyRecord> recs;
             for (uint8_t kv : sel) {
                 uint16_t def = g_layer == 0 ? kv : 0;
@@ -919,9 +943,8 @@ void KeymapTab() {
     EndCard();
     ImGui::Spacing();
     BeginCard("layerhelp");
-    CardTitle("Katmanlar");
-    NoSelectionHint("Fn1–Fn3 katmanları, klavyedeki ilgili Fn tuşu basılıyken geçerli olur. "
-                    "Bir tuşu Fn katmanına atamak için “Fonksiyon” sekmesindeki Fn1–Fn3'ü kullanın.");
+    CardTitle(T("Katmanlar"));
+    NoSelectionHint(T("Fn1–Fn3 katmanları, klavyedeki ilgili Fn tuşu basılıyken geçerli olur. Bir tuşu Fn katmanına atamak için “Fonksiyon” sekmesindeki Fn1–Fn3'ü kullanın."));
     EndCard();
     EndPage();
 }
@@ -933,10 +956,9 @@ void PerformanceTab() {
     if (!BeginPage("perf")) return;
 
     BeginCard("keys");
-    CardTitle(sel.empty() ? "Seçili tuşlar" : sel.size() == 1 ? "Seçili tuş" : "Seçili tuşlar");
+    CardTitle(sel.empty() ? T("Seçili tuşlar") : sel.size() == 1 ? T("Seçili tuş") : T("Seçili tuşlar"));
     if (sel.empty() || !s.keys[g_anchor].present) {
-        NoSelectionHint("Ayarlamak için klavye görselinden tuş seçin. “Tümünü seç” ile bütün klavyeyi, "
-                        "“WASD” ile oyun tuşlarını hızlıca seçebilirsiniz.");
+        NoSelectionHint(T("Ayarlamak için klavye görselinden tuş seçin. “Tümünü seç” ile bütün klavyeyi, “WASD” ile oyun tuşlarını hızlıca seçebilirsiniz."));
     } else {
         KeyState& a = s.keys[g_anchor];
         auto modeOf = [&](uint8_t kv, uint8_t touch) {
@@ -973,9 +995,9 @@ void PerformanceTab() {
             ImGui::TableNextColumn();
             if (touch == TOUCH_GLOBAL) {
                 char buf[64];
-                snprintf(buf, sizeof(buf), "Genel basma noktasını kullanıyor (%.2f mm).", s.globalActuation / 1000.f);
+                snprintf(buf, sizeof(buf), T("Genel basma noktasını kullanıyor (%.2f mm)."), s.globalActuation / 1000.f);
                 NoSelectionHint(buf);
-            } else if (MmSlider(touch == TOUCH_RAPID ? "İlk tetikleme noktası" : "Basma noktası", &a.db[0], s.minTravel,
+            } else if (MmSlider(touch == TOUCH_RAPID ? T("İlk tetikleme noktası") : T("Basma noktası"), &a.db[0], s.minTravel,
                                 keyMax, step)) {
                 std::vector<KeyRecord> recs;
                 for (uint8_t kv : sel) {
@@ -986,8 +1008,8 @@ void PerformanceTab() {
                 g_kb.WriteKeyRecords(recs);
             }
             if (touch == TOUCH_RAPID) {
-                bool rt = MmSlider("RT basma hassasiyeti", &a.rtPress, s.minTravel, keyMax, step);
-                rt |= MmSlider("RT bırakma hassasiyeti", &a.rtRelease, s.minTravel, keyMax, step);
+                bool rt = MmSlider(T("RT basma hassasiyeti"), &a.rtPress, s.minTravel, keyMax, step);
+                rt |= MmSlider(T("RT bırakma hassasiyeti"), &a.rtRelease, s.minTravel, keyMax, step);
                 if (rt) {
                     std::vector<KeyRecord> recs;
                     for (uint8_t kv : sel) {
@@ -1014,12 +1036,12 @@ void PerformanceTab() {
                         g_kb.WriteKeyRecords(recs);
                     }
                 };
-                dead("Basma ölü bölgesi", &KeyState::deadPress, F_DEAD_PRESS);
-                dead("Bırakma ölü bölgesi", &KeyState::deadRelease, F_DEAD_RELEASE);
+                dead(T("Basma ölü bölgesi"), &KeyState::deadPress, F_DEAD_PRESS);
+                dead(T("Bırakma ölü bölgesi"), &KeyState::deadRelease, F_DEAD_RELEASE);
             }
             if (s.SignalSwitch() && !s.switches.empty()) {
                 int axis = a.axis < s.switches.size() ? a.axis : 0;
-                ImGui::TextUnformatted("Switch tipi");
+                ImGui::TextUnformatted(T("Switch tipi"));
                 ImGui::SetNextItemWidth(-FLT_MIN);
                 if (ImGui::BeginCombo("##axis", s.switches[axis].name.c_str())) {
                     for (size_t i = 0; i < s.switches.size(); ++i) {
@@ -1045,25 +1067,25 @@ void PerformanceTab() {
 
     PageSide();
     BeginCard("global");
-    CardTitle("Genel");
-    if (MmSlider("Genel basma noktası", &s.globalActuation, s.minTravel, s.maxTravel, step)) {
+    CardTitle(T("Genel"));
+    if (MmSlider(T("Genel basma noktası"), &s.globalActuation, s.minTravel, s.maxTravel, step)) {
         g_kb.WriteGlobalDb();
         for (uint8_t kv : s.AllKeys()) {
             if (s.keys[kv].touchMode == TOUCH_GLOBAL) s.keys[kv].db[0] = s.globalActuation;
         }
     }
     if (!s.SignalDead()) {
-        if (MmSlider("Basma ölü bölgesi", &s.globalDeadPress, 0, 1000, 10)) g_kb.WriteGlobalDb();
-        if (MmSlider("Bırakma ölü bölgesi", &s.globalDeadRelease, 0, 1000, 10)) g_kb.WriteGlobalDb();
+        if (MmSlider(T("Basma ölü bölgesi"), &s.globalDeadPress, 0, 1000, 10)) g_kb.WriteGlobalDb();
+        if (MmSlider(T("Bırakma ölü bölgesi"), &s.globalDeadRelease, 0, 1000, 10)) g_kb.WriteGlobalDb();
     }
     bool sr = s.mainLight.superResponse;
-    if (ToggleRow("Super Response", &sr, "Gecikmeyi mümkün olduğunca düşürür; Rapid Trigger hassasiyeti biraz azalır.")) {
+    if (ToggleRow("Super Response", &sr, T("Gecikmeyi mümkün olduğunca düşürür; Rapid Trigger hassasiyeti biraz azalır."))) {
         s.mainLight.superResponse = sr;
         g_kb.WriteMainLight();
     }
     if (s.TopDeadSupported() && s.topDead >= 0) {
         bool td = s.topDead == 1;
-        if (ToggleRow("Üst ölü bölge", &td)) {
+        if (ToggleRow(T("Üst ölü bölge"), &td)) {
             s.topDead = td ? 1 : 0;
             g_kb.Send(CmdPack(TOP_DEAD_SWITCH, td ? 1 : 0));
         }
@@ -1072,7 +1094,7 @@ void PerformanceTab() {
     ImGui::Spacing();
 
     BeginCard("test");
-    CardTitle("Tuş derinliği testi");
+    CardTitle(T("Tuş derinliği testi"));
     const bool testing = g_kb.GetLiveMode() == LiveMode::TravelTest;
     if (testing) {
         uint16_t maxDepth = 0;
@@ -1081,11 +1103,11 @@ void PerformanceTab() {
         snprintf(buf, sizeof(buf), "%.2f mm", maxDepth / 1000.f);
         ImGui::ProgressBar(std::min(1.f, maxDepth / 4000.f), ImVec2(-FLT_MIN, ImGui::GetFrameHeight()), buf);
         ImGui::Spacing();
-        if (WideButton("Testi durdur")) g_kb.SetLiveMode(LiveMode::Off);
+        if (WideButton(T("Testi durdur"))) g_kb.SetLiveMode(LiveMode::Off);
     } else {
-        NoSelectionHint("Tuşlara bastıkça her tuşun derinliği klavye görselinde canlı görünür.");
+        NoSelectionHint(T("Tuşlara bastıkça her tuşun derinliği klavye görselinde canlı görünür."));
         ImGui::Spacing();
-        if (PrimaryButton("Testi başlat", ImVec2(-FLT_MIN, 0))) g_kb.SetLiveMode(LiveMode::TravelTest);
+        if (PrimaryButton(T("Testi başlat"), ImVec2(-FLT_MIN, 0))) g_kb.SetLiveMode(LiveMode::TravelTest);
     }
     EndCard();
     EndPage();
@@ -1102,7 +1124,7 @@ void LoadAdvEdit(uint8_t kv) {
     }
     if (k.advType == ADV_DKS) {
         g_adv.dksDb1 = k.db[1] ? k.db[1] : 1400;
-        g_adv.dksDb2 = k.db[2] ? k.db[2] : 3000;
+        g_adv.dksDb2 = k.db[3] ? k.db[3] : 3000;  // firmware keeps depth 2 in DB3 (DB2 = midpoint)
     } else if (k.advType == ADV_MPT) {
         for (int i = 0; i < 3; ++i) g_adv.depths[i] = k.db[1 + i] ? k.db[1 + i] : g_adv.depths[i];
     }
@@ -1117,7 +1139,7 @@ void LoadAdvEdit(uint8_t kv) {
 // Label column + control, used inside the advanced-key editors.
 void FieldLabel(const char* label, float width) {
     ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(label);
+    ImGui::TextUnformatted(T(label));
     ImGui::SameLine(width);
 }
 
@@ -1128,8 +1150,8 @@ void AdvancedTab() {
 
     if (sel.size() != 1) {
         BeginCard("hint");
-        CardTitle("Gelişmiş tuşlar");
-        NoSelectionHint("Gelişmiş fonksiyon atamak için klavye görselinden tek bir tuş seçin.");
+        CardTitle(T("Gelişmiş tuşlar"));
+        NoSelectionHint(T("Gelişmiş fonksiyon atamak için klavye görselinden tek bir tuş seçin."));
         EndCard();
         PageSide();
         EndPage();
@@ -1160,7 +1182,7 @@ void AdvancedTab() {
         {ADV_TGL, "Tıkla: basılı kalsın"}, {ADV_END, "Bırakınca tuş gönder"},
         {ADV_RS, "Derine basan kazanır"},  {ADV_SOCD, "Karşıt tuş önceliği"},
     };
-    CardTitle("Fonksiyon");
+    CardTitle(T("Fonksiyon"));
     {
         const float gap = 8;
         const float avail = ImGui::GetContentRegionAvail().x;
@@ -1179,18 +1201,18 @@ void AdvancedTab() {
     ImGui::Spacing();
 
     auto partnerPicker = [&]() {
-        FieldLabel("Eş tuş", fs * 9);
+        FieldLabel(T("Eş tuş"), fs * 9);
         char buf[48];
-        snprintf(buf, sizeof(buf), "%s###partner", g_adv.partner ? KeyCodeLabel(g_adv.partner).c_str() : "— seç —");
+        snprintf(buf, sizeof(buf), "%s###partner", g_adv.partner ? KeyCodeLabel(g_adv.partner).c_str() : T("— seç —"));
         if (ImGui::Button(buf, ImVec2(fs * 7, ImGui::GetFrameHeight() * 1.1f))) g_pickTarget = &g_adv.partner;
         ImGui::SameLine();
-        ImGui::TextDisabled(g_pickTarget == &g_adv.partner ? "Klavye görselinde eş tuşa tıklayın…"
-                                                           : "Butona basıp klavyeden seçin");
+        ImGui::TextDisabled(g_pickTarget == &g_adv.partner ? T("Klavye görselinde eş tuşa tıklayın…")
+                                                           : T("Butona basıp klavyeden seçin"));
     };
 
     if (g_adv.type != ADV_NONE) {
         BeginCard("editor");
-        CardTitle("Ayarlar");
+        CardTitle(T("Ayarlar"));
         const float lw = fs * 9;
         switch (g_adv.type) {
             case ADV_DKS: {
@@ -1198,13 +1220,13 @@ void AdvancedTab() {
                 static const uint8_t kBits[] = {0x01, 0x02, 0x04, 0x18, 0x20, 0x40, 0x80};
                 if (ImGui::BeginTable("depths", 2, ImGuiTableFlags_SizingStretchSame)) {
                     ImGui::TableNextColumn();
-                    MmSlider("1. derinlik", &g_adv.dksDb1, s.minTravel, s.maxTravel, step);
+                    MmSlider(T("1. derinlik"), &g_adv.dksDb1, s.minTravel, s.maxTravel, step);
                     ImGui::TableNextColumn();
-                    MmSlider("2. derinlik", &g_adv.dksDb2, s.minTravel, s.maxTravel, step);
+                    MmSlider(T("2. derinlik"), &g_adv.dksDb2, s.minTravel, s.maxTravel, step);
                     ImGui::EndTable();
                 }
                 if (ImGui::BeginTable("dks", 8, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
-                    ImGui::TableSetupColumn("Tuş", ImGuiTableColumnFlags_WidthFixed, fs * 7.5f);
+                    ImGui::TableSetupColumn(T("Tuş"), ImGuiTableColumnFlags_WidthFixed, fs * 7.5f);
                     for (const char* n : kNodes) ImGui::TableSetupColumn(n, ImGuiTableColumnFlags_WidthFixed, fs * 2.2f);
                     ImGui::TableHeadersRow();
                     for (int r = 0; r < 4; ++r) {
@@ -1224,14 +1246,14 @@ void AdvancedTab() {
                     }
                     ImGui::EndTable();
                 }
-                NoSelectionHint("↓1/↓2: 1./2. derinliğe basış  ·  ↑2/↑1: geri bırakış  ·  ▬: arada basılı tut");
+                NoSelectionHint(T("↓1/↓2: 1./2. derinliğe basış  ·  ↑2/↑1: geri bırakış  ·  ▬: arada basılı tut"));
                 break;
             }
             case ADV_MPT:
                 for (int i = 0; i < 3; ++i) {
                     ImGui::PushID(i);
                     char label[24];
-                    snprintf(label, sizeof(label), "%d. derinlik", i + 1);
+                    snprintf(label, sizeof(label), T("%d. derinlik"), i + 1);
                     FieldLabel(label, lw);
                     KeyCodeButton("code", &g_adv.codes[i]);
                     ImGui::SameLine();
@@ -1241,17 +1263,17 @@ void AdvancedTab() {
                 }
                 break;
             case ADV_MT:
-                FieldLabel("Dokununca", lw);
+                FieldLabel(T("Dokununca"), lw);
                 KeyCodeButton("tap", &g_adv.codes[1]);
-                FieldLabel("Basılı tutunca", lw);
+                FieldLabel(T("Basılı tutunca"), lw);
                 KeyCodeButton("hold", &g_adv.codes[0]);
                 [[fallthrough]];
             case ADV_TGL: {
                 if (g_adv.type == ADV_TGL) {
-                    FieldLabel("Tuş", lw);
+                    FieldLabel(T("Tuş"), lw);
                     KeyCodeButton("tgl", &g_adv.codes[0]);
                 }
-                FieldLabel("Basılı tutma süresi", lw);
+                FieldLabel(T("Basılı tutma süresi"), lw);
                 int d = g_adv.delayMs;
                 ImGui::SetNextItemWidth(-FLT_MIN);
                 if (ImGui::SliderInt("##delay", &d, 10, 1000, "%d ms")) {
@@ -1260,7 +1282,7 @@ void AdvancedTab() {
                 break;
             }
             case ADV_END:
-                FieldLabel("Bırakınca gönder", lw);
+                FieldLabel(T("Bırakınca gönder"), lw);
                 KeyCodeButton("end", &g_adv.codes[0]);
                 break;
             case ADV_RS:
@@ -1270,18 +1292,18 @@ void AdvancedTab() {
                 partnerPicker();
                 ImGui::Spacing();
                 static const char* const kModes[] = {"Son basılan", "Bu tuş öncelikli", "Eş tuş öncelikli", "Nötr"};
-                ImGui::TextUnformatted("İkisi birlikte basılınca");
+                ImGui::TextUnformatted(T("İkisi birlikte basılınca"));
                 Segmented("socdmode", kModes, 4, &g_adv.socdMode, ImGui::GetContentRegionAvail().x);
                 if (s.SocdVersion() == 3) {
                     ImGui::Spacing();
                     static const char* const kTypesV3[] = {"Tuş konumuna göre", "Tuş koduna göre"};
-                    ImGui::TextUnformatted("Bağlama");
+                    ImGui::TextUnformatted(T("Bağlama"));
                     Segmented("socdtype", kTypesV3, 2, &g_adv.socdType, ImGui::GetContentRegionAvail().x);
                     if (g_adv.socdType == 1) {
                         ImGui::Spacing();
-                        FieldLabel("Bu tuşun kodu", lw);
+                        FieldLabel(T("Bu tuşun kodu"), lw);
                         KeyCodeButton("v1", &g_adv.codes[0]);
-                        FieldLabel("Eş tuşun kodu", lw);
+                        FieldLabel(T("Eş tuşun kodu"), lw);
                         KeyCodeButton("v2", &g_adv.codes[1]);
                     }
                 }
@@ -1295,16 +1317,16 @@ void AdvancedTab() {
 
     PageSide();
     BeginCard("keycard");
-    CardTitle("Tuş");
+    CardTitle(T("Tuş"));
     BigText(KeyCodeLabel(kv).c_str());
-    ImGui::TextDisabled("Şu anki fonksiyon: %s", kAdvNames[std::min<int>(k.advType, 9)]);
-    if (k.advType == ADV_MACRO) NoSelectionHint("Bu tuşa makro atanmış; Makrolar sekmesinden yönetilir.");
+    ImGui::TextDisabled(T("Şu anki fonksiyon: %s"), T(kAdvNames[std::min<int>(k.advType, 9)]));
+    if (k.advType == ADV_MACRO) NoSelectionHint(T("Bu tuşa makro atanmış; Makrolar sekmesinden yönetilir."));
     ImGui::Spacing();
 
     const bool needsPartner = g_adv.type == ADV_RS || g_adv.type == ADV_SOCD;
     const bool canSave = g_adv.type != ADV_NONE && (!needsPartner || (g_adv.partner && g_adv.partner != kv));
     ImGui::BeginDisabled(!canSave || !Ready());
-    if (PrimaryButton("Kaydet", ImVec2(-FLT_MIN, 0))) {
+    if (PrimaryButton(T("Kaydet"), ImVec2(-FLT_MIN, 0))) {
         const uint8_t p = g_adv.partner;
         switch (g_adv.type) {
             case ADV_DKS: g_kb.Send(DksPack(wide, kv, g_adv.codes, g_adv.trps, g_adv.dksDb1, g_adv.dksDb2)); break;
@@ -1331,7 +1353,7 @@ void AdvancedTab() {
     }
     ImGui::EndDisabled();
     ImGui::BeginDisabled(k.advType == ADV_NONE || !Ready());
-    if (WideButton("Fonksiyonu kaldır")) {
+    if (WideButton(T("Fonksiyonu kaldır"))) {
         std::vector<KeyRecord> recs = {{kv, F_MODE, static_cast<uint16_t>(k.touchMode << 4)}};
         uint8_t partner = static_cast<uint8_t>(k.dks[0]);
         if ((k.advType == ADV_RS || k.advType == ADV_SOCD) && partner && s.keys[partner].present &&
@@ -1384,19 +1406,19 @@ void MacrosTab() {
     // Library
     ImGui::TableNextColumn();
     BeginCard("library");
-    CardTitle("Makro kütüphanesi");
+    CardTitle(T("Makro kütüphanesi"));
     const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
     ImGui::BeginDisabled(g_recording);
-    if (PrimaryButton("+ Yeni", ImVec2(half, 0))) {
+    if (PrimaryButton(T("+ Yeni"), ImVec2(half, 0))) {
         char name[32];
-        snprintf(name, sizeof(name), "Makro %zu", g_macros.size() + 1);
+        snprintf(name, sizeof(name), T("Makro %zu"), g_macros.size() + 1);
         g_macros.push_back({name, {}});
         g_macroSel = static_cast<int>(g_macros.size()) - 1;
         SaveMacros();
     }
     ImGui::SameLine();
     ImGui::BeginDisabled(g_macroSel < 0);
-    if (ImGui::Button("Sil", ImVec2(half, ImGui::GetFrameHeight() * 1.2f))) {
+    if (ImGui::Button(T("Sil"), ImVec2(half, ImGui::GetFrameHeight() * 1.2f))) {
         g_macros.erase(g_macros.begin() + g_macroSel);
         g_macroSel = std::min<int>(g_macroSel, static_cast<int>(g_macros.size()) - 1);
         SaveMacros();
@@ -1404,11 +1426,11 @@ void MacrosTab() {
     ImGui::EndDisabled();
     ImGui::EndDisabled();
     ImGui::Spacing();
-    if (g_macros.empty()) NoSelectionHint("Henüz makro yok.");
+    if (g_macros.empty()) NoSelectionHint(T("Henüz makro yok."));
     for (int i = 0; i < static_cast<int>(g_macros.size()); ++i) {
         ImGui::PushID(i);
         char sub[32];
-        snprintf(sub, sizeof(sub), "%zu adım", g_macros[i].events.size());
+        snprintf(sub, sizeof(sub), T("%zu adım"), g_macros[i].events.size());
         if (OptionCard("m", g_macros[i].name.c_str(), sub, g_macroSel == i,
                        ImVec2(ImGui::GetContentRegionAvail().x, fs * 2.6f)) &&
             !g_recording) {
@@ -1422,30 +1444,30 @@ void MacrosTab() {
     ImGui::TableNextColumn();
     const bool haveMacro = g_macroSel >= 0 && g_macroSel < static_cast<int>(g_macros.size());
     BeginCard("editor");
-    CardTitle("Düzenle");
+    CardTitle(T("Düzenle"));
     if (!haveMacro) {
-        NoSelectionHint("Soldan bir makro seçin veya yeni bir tane oluşturun.");
+        NoSelectionHint(T("Soldan bir makro seçin veya yeni bir tane oluşturun."));
     } else {
         Macro& m = g_macros[g_macroSel];
         char name[64];
         snprintf(name, sizeof(name), "%s", m.name.c_str());
         const float recW = fs * 10;
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - recW - ImGui::GetStyle().ItemSpacing.x);
-        if (ImGui::InputTextWithHint("##name", "Makro adı", name, sizeof(name))) m.name = name;
+        if (ImGui::InputTextWithHint("##name", T("Makro adı"), name, sizeof(name))) m.name = name;
         if (ImGui::IsItemDeactivatedAfterEdit()) SaveMacros();
         ImGui::SameLine();
         if (!g_recording) {
-            if (PrimaryButton("● Klavyeden kaydet", ImVec2(recW, ImGui::GetFrameHeight()))) {
+            if (PrimaryButton(T("● Klavyeden kaydet"), ImVec2(recW, ImGui::GetFrameHeight()))) {
                 m.events.clear();
                 g_recording = true;
                 g_lastRecordAt = 0;
             }
-        } else if (DangerButton("■ Kaydı durdur", ImVec2(recW, ImGui::GetFrameHeight()))) {
+        } else if (DangerButton(T("■ Kaydı durdur"), ImVec2(recW, ImGui::GetFrameHeight()))) {
             g_recording = false;
             SaveMacros();
         }
         if (g_recording) {
-            ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "Kayıt ediliyor… tuşlara basın (%zu / 64 adım)",
+            ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), T("Kayıt ediliyor… tuşlara basın (%zu / 64 adım)"),
                                m.events.size());
         }
         ImGui::Spacing();
@@ -1455,9 +1477,9 @@ void MacrosTab() {
                               ImVec2(0, fs * 14))) {
             ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, fs * 1.6f);
-            ImGui::TableSetupColumn("Tuş", ImGuiTableColumnFlags_WidthFixed, fs * 7.5f);
-            ImGui::TableSetupColumn("Olay", ImGuiTableColumnFlags_WidthFixed, fs * 8);
-            ImGui::TableSetupColumn("Önceki adımdan sonra", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn(T("Tuş"), ImGuiTableColumnFlags_WidthFixed, fs * 7.5f);
+            ImGui::TableSetupColumn(T("Olay"), ImGuiTableColumnFlags_WidthFixed, fs * 8);
+            ImGui::TableSetupColumn(T("Önceki adımdan sonra"), ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, fs * 2);
             ImGui::TableHeadersRow();
             int removeAt = -1;
@@ -1493,21 +1515,21 @@ void MacrosTab() {
         }
         ImGui::Spacing();
         ImGui::BeginDisabled(m.events.size() >= 64 || g_recording);
-        if (ImGui::Button("+ Adım ekle", ImVec2(fs * 8, ImGui::GetFrameHeight() * 1.1f))) {
+        if (ImGui::Button(T("+ Adım ekle"), ImVec2(fs * 8, ImGui::GetFrameHeight() * 1.1f))) {
             m.events.push_back({0x04, true, m.events.empty() ? 0u : 20u});
             SaveMacros();
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
         ImGui::AlignTextToFramePadding();
-        ImGui::TextDisabled("Süreler milisaniye. Her basışa bir bırakma ekleyin; en fazla 64 adım.");
+        ImGui::TextDisabled(T("Süreler milisaniye. Her basışa bir bırakma ekleyin; en fazla 64 adım."));
     }
     EndCard();
 
     // Binding
     ImGui::TableNextColumn();
     BeginCard("bind");
-    CardTitle("Tuşa ata");
+    CardTitle(T("Tuşa ata"));
     std::vector<uint8_t> sel = Selected();
     int bound = 0;
     for (uint8_t kv : s.AllKeys()) bound += s.keys[kv].advType == ADV_MACRO ? 1 : 0;
@@ -1515,15 +1537,15 @@ void MacrosTab() {
     const bool already = targetOk && s.keys[sel[0]].advType == ADV_MACRO;
     if (targetOk) {
         BigText(KeyCodeLabel(sel[0]).c_str());
-        if (already) ImGui::TextDisabled("Bu tuşta makro var");
+        if (already) ImGui::TextDisabled(T("Bu tuşta makro var"));
     } else {
-        NoSelectionHint("Klavye görselinden tek bir tuş seçin.");
+        NoSelectionHint(T("Klavye görselinden tek bir tuş seçin."));
     }
     ImGui::Spacing();
     if (s.MacroV2()) {
         static const char* const kModes[] = {"Bir kez çalıştır", "Tıkla: tekrarla / durdur", "Basılıyken tekrarla",
                                              "Basılıyken tekrarla, turu bitir"};
-        ImGui::TextUnformatted("Çalışma şekli");
+        ImGui::TextUnformatted(T("Çalışma şekli"));
         for (int i = 0; i < 4; ++i) {
             ImGui::PushID(i);
             if (OptionCard("mode", kModes[i], nullptr, g_bindMode == i,
@@ -1534,11 +1556,11 @@ void MacrosTab() {
         }
         ImGui::Spacing();
         ImGui::BeginDisabled(g_bindMode == 0);
-        ImGui::TextUnformatted("Tekrar sayısı");
+        ImGui::TextUnformatted(T("Tekrar sayısı"));
         ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::InputInt("##rep", &g_bindRepeat);
         g_bindRepeat = std::clamp(g_bindRepeat, 1, 65530);
-        ImGui::TextUnformatted("Tekrar aralığı (ms)");
+        ImGui::TextUnformatted(T("Tekrar aralığı (ms)"));
         ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::InputInt("##gap", &g_bindDelay);
         g_bindDelay = std::clamp(g_bindDelay, 1, 0xFFFFFF);
@@ -1547,16 +1569,16 @@ void MacrosTab() {
     }
     ImGui::BeginDisabled(!targetOk || !haveMacro || (haveMacro && g_macros[g_macroSel].events.empty()) ||
                          g_recording || !Ready() || (bound >= 8 && !already));
-    if (PrimaryButton("Makroyu tuşa yükle", ImVec2(-FLT_MIN, 0))) SendMacroBinding(sel[0], g_macroSel);
+    if (PrimaryButton(T("Makroyu tuşa yükle"), ImVec2(-FLT_MIN, 0))) SendMacroBinding(sel[0], g_macroSel);
     ImGui::EndDisabled();
     ImGui::BeginDisabled(!already || !Ready());
-    if (WideButton("Tuştan makroyu kaldır")) {
+    if (WideButton(T("Tuştan makroyu kaldır"))) {
         KeyState& k = s.keys[sel[0]];
         k.advType = ADV_NONE;
         g_kb.WriteKeyRecords({{sel[0], F_MODE, static_cast<uint16_t>(k.touchMode << 4)}});
     }
     ImGui::EndDisabled();
-    ImGui::TextDisabled("Makro tuşları: %d / 8", bound);
+    ImGui::TextDisabled(T("Makro tuşları: %d / 8"), bound);
     EndCard();
     ImGui::EndTable();
 }
@@ -1582,9 +1604,9 @@ bool EffectGrid(uint8_t* mode, int count, bool logo) {
         ImGui::PushID(i);
         char title[64];
         if (logo) {
-            snprintf(title, sizeof(title), "Stil %d", i + 1);
+            snprintf(title, sizeof(title), T("Stil %d"), i + 1);
         } else {
-            snprintf(title, sizeof(title), "M%d  %s", i + 1, kEffectNames[i]);
+            snprintf(title, sizeof(title), "M%d  %s", i + 1, T(kEffectNames[i]));
         }
         if (OptionCard("fx", title, nullptr, *mode == i + 1, size, std::fmod(i * 0.137f, 1.f)) && *mode != i + 1) {
             *mode = static_cast<uint8_t>(i + 1);
@@ -1617,9 +1639,9 @@ void LightControls(const char* id, LightState& L, bool logo) {
         ImGui::Spacing();
 
         if (big == 0) {
-            NoSelectionHint("Işık kapalı. Açmak için yukarıdan bir mod seçin.");
+            NoSelectionHint(T("Işık kapalı. Açmak için yukarıdan bir mod seçin."));
         } else if (big == 1) {
-            CardTitle("Renk seçin  ·  düzenlemek için çift tıklayın veya sağ tıklayın");
+            CardTitle(T("Renk seçin  ·  düzenlemek için çift tıklayın veya sağ tıklayın"));
             const float tile = fs * 3.0f;
             static int editSlot = -1;
             for (int i = 0; i < 8; ++i) {
@@ -1639,25 +1661,25 @@ void LightControls(const char* id, LightState& L, bool logo) {
             }
             ImGui::Spacing();
             if (L.staticSlot == 7) {
-                ImGui::TextDisabled("Gökkuşağı: klavyenin kendi renk geçişi.");
+                ImGui::TextDisabled(T("Gökkuşağı: klavyenin kendi renk geçişi."));
             } else {
                 char hex[16];
                 snprintf(hex, sizeof(hex), "#%06X", L.colors[L.staticSlot]);
-                ImGui::TextDisabled("Renk %d  ·  %s", L.staticSlot + 1, hex);
+                ImGui::TextDisabled(T("Renk %d  ·  %s"), L.staticSlot + 1, hex);
                 ImGui::SameLine();
-                if (ImGui::SmallButton("Düzenle")) {
+                if (ImGui::SmallButton(T("Düzenle"))) {
                     editSlot = L.staticSlot;
                     ImGui::OpenPopup("edit2");
                 }
                 if (editSlot == L.staticSlot && ColorEditPopup("edit2", &L.colors[L.staticSlot])) changed = true;
             }
         } else if (big == 2) {
-            CardTitle(logo ? "Stil seçin" : "Efekt seçin");
+            CardTitle(logo ? T("Stil seçin") : T("Efekt seçin"));
             changed |= EffectGrid(&L.mode, logo ? 4 : 20, logo);
         } else if (big == 3) {
             DeviceState& s = S();
             static uint32_t paint = 0xFF0000;
-            CardTitle("Fırça rengi");
+            CardTitle(T("Fırça rengi"));
             static const uint32_t kPalette[] = {0xFF0000, 0xFF6A00, 0xFFD000, 0x7CFF00, 0x00FF00, 0x00FFC8,
                                                 0x00A0FF, 0x0000FF, 0x8000FF, 0xFF00C8, 0xFFFFFF, 0x000000};
             const float tile = fs * 2.0f;
@@ -1670,14 +1692,14 @@ void LightControls(const char* id, LightState& L, bool logo) {
             ImGui::SameLine(0, fs * 0.9f);
             bool custom = std::find(std::begin(kPalette), std::end(kPalette), paint) == std::end(kPalette);
             if (ColorTile("custom", paint, custom, tile) >= 1) ImGui::OpenPopup("brush");
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Özel renk");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(T("Özel renk"));
             ColorEditPopup("brush", &paint);
 
             ImGui::Spacing();
             std::vector<uint8_t> sel = Selected();
             ImGui::BeginDisabled(sel.empty() || !Ready());
             char apply[48];
-            snprintf(apply, sizeof(apply), "Seçili %zu tuşa uygula", sel.size());
+            snprintf(apply, sizeof(apply), T("Seçili %zu tuşa uygula"), sel.size());
             if (PrimaryButton(apply, ImVec2(fs * 11, 0))) {
                 for (uint8_t kv : sel) s.keys[kv].color = paint;
                 g_kb.WriteKeyColors(sel);
@@ -1685,7 +1707,7 @@ void LightControls(const char* id, LightState& L, bool logo) {
             ImGui::EndDisabled();
             ImGui::SameLine();
             ImGui::BeginDisabled(!Ready());
-            if (ImGui::Button("Tüm klavyeyi boya", ImVec2(fs * 9, ImGui::GetFrameHeight() * 1.2f))) {
+            if (ImGui::Button(T("Tüm klavyeyi boya"), ImVec2(fs * 9, ImGui::GetFrameHeight() * 1.2f))) {
                 std::vector<uint8_t> all = s.AllKeys();
                 for (uint8_t kv : all) s.keys[kv].color = paint;
                 g_kb.WriteKeyColors(all);
@@ -1693,21 +1715,21 @@ void LightControls(const char* id, LightState& L, bool logo) {
             ImGui::EndDisabled();
             ImGui::SameLine();
             ImGui::BeginDisabled(sel.size() != 1);
-            if (ImGui::Button("Tuştan renk al", ImVec2(fs * 7.5f, ImGui::GetFrameHeight() * 1.2f))) {
+            if (ImGui::Button(T("Tuştan renk al"), ImVec2(fs * 7.5f, ImGui::GetFrameHeight() * 1.2f))) {
                 paint = s.keys[sel[0]].color;
             }
             ImGui::EndDisabled();
-            NoSelectionHint("Klavye görselinde tuşları seçin (Ctrl ile çoklu seçim), sonra rengi uygulayın.");
+            NoSelectionHint(T("Klavye görselinde tuşları seçin (Ctrl ile çoklu seçim), sonra rengi uygulayın."));
         }
 
         PageSide();
         BeginCard("settings");
-        CardTitle("Ayarlar");
+        CardTitle(T("Ayarlar"));
         ImGui::BeginDisabled(big == 0);
         const float w = ImGui::GetContentRegionAvail().x;
         static const char* const kLevels[] = {"1", "2", "3", "4", "5"};
 
-        ImGui::TextUnformatted("Parlaklık");
+        ImGui::TextUnformatted(T("Parlaklık"));
         int br = L.brightness;
         if (Segmented("br", kLevels, 5, &br, w)) {
             L.brightness = static_cast<uint8_t>(br);
@@ -1716,14 +1738,14 @@ void LightControls(const char* id, LightState& L, bool logo) {
         ImGui::Spacing();
 
         ImGui::BeginDisabled(big != 2);
-        ImGui::TextUnformatted("Hız");
+        ImGui::TextUnformatted(T("Hız"));
         int sp = L.speed;
         if (Segmented("sp", kLevels, 5, &sp, w)) {
             L.speed = static_cast<uint8_t>(sp);
             changed = true;
         }
         ImGui::Spacing();
-        ImGui::TextUnformatted("Yön");
+        ImGui::TextUnformatted(T("Yön"));
         static const char* const kDir[] = {"Normal", "Ters"};
         int dir = L.reverse ? 1 : 0;
         if (Segmented("dir", kDir, 2, &dir, w)) {
@@ -1734,15 +1756,15 @@ void LightControls(const char* id, LightState& L, bool logo) {
 
         if (!logo) {
             ImGui::Spacing();
-            ImGui::TextUnformatted("Uykuya geç");
+            ImGui::TextUnformatted(T("Uykuya geç"));
             static const int kSleep[] = {1, 2, 3, 5, 10, 15, 20, 25, 30, 45, 60, 120, 0};
             char cur[24];
-            snprintf(cur, sizeof(cur), L.sleepMinutes ? "%d dakika sonra" : "Hiçbir zaman", L.sleepMinutes);
+            snprintf(cur, sizeof(cur), L.sleepMinutes ? T("%d dakika sonra") : T("Hiçbir zaman"), L.sleepMinutes);
             ImGui::SetNextItemWidth(w);
             if (ImGui::BeginCombo("##sleep", cur)) {
                 for (int m : kSleep) {
                     char item[24];
-                    snprintf(item, sizeof(item), m ? "%d dakika sonra" : "Hiçbir zaman", m);
+                    snprintf(item, sizeof(item), m ? T("%d dakika sonra") : T("Hiçbir zaman"), m);
                     if (ImGui::Selectable(item, L.sleepMinutes == m)) {
                         L.sleepMinutes = static_cast<uint8_t>(m);
                         changed = true;
@@ -1786,6 +1808,42 @@ void LightingTab() {
 
 // --- Device -----------------------------------------------------------------------------------------------------
 
+struct ReleaseNote {
+    const char* version;
+    const char* items[4];
+};
+
+// Newest first. Item texts are translation keys.
+const ReleaseNote kReleaseNotes[] = {
+    {"0.2.0",
+     {"Arayüz dili: Türkçe, English, Deutsch, 中文, 日本語", "Yeni klavye görseli ve tüm menülerde yeni tasarım",
+      "Sürüm bilgisi ve Hakkında bölümü", "Gerçek klavyede doğrulanan yazma işlemleri"}},
+    {"0.1.0", {"İlk sürüm"}},
+};
+
+void AboutCard() {
+    BeginCard("about");
+    CardTitle("Hakkında");
+    ImGui::TextUnformatted("Slice75 HE Native");
+    ImGui::SameLine();
+    ImGui::TextDisabled("v" APP_VERSION_STR);
+    NoSelectionHint("Resmi olmayan, açık kaynak yapılandırma programı. Chilkey ile bağlantılı değildir.");
+    ImGui::Spacing();
+    if (WideButton("GitHub sayfasını aç")) {
+        ShellExecuteW(nullptr, L"open", TEXT(APP_REPO_URL), nullptr, nullptr, SW_SHOWNORMAL);
+    }
+    ImGui::Spacing();
+    if (ImGui::CollapsingHeader(T("Sürüm notları"))) {
+        for (const ReleaseNote& r : kReleaseNotes) {
+            ImGui::Text("v%s", r.version);
+            for (const char* item : r.items) {
+                if (item) ImGui::BulletText("%s", T(item));
+            }
+        }
+    }
+    EndCard();
+}
+
 void DeviceTab() {
     DeviceState& s = S();
     const float fs = ImGui::GetFontSize();
@@ -1794,22 +1852,22 @@ void DeviceTab() {
     if (ImGui::BeginTable("devcols", 2, ImGuiTableFlags_SizingStretchSame)) {
         ImGui::TableNextColumn();
         BeginCard("info");
-        CardTitle("Cihaz bilgisi");
+        CardTitle(T("Cihaz bilgisi"));
         auto row = [&](const char* k, const std::string& v) {
             ImGui::TextDisabled("%s", k);
             ImGui::SameLine(fs * 7);
             ImGui::TextUnformatted(v.empty() ? "—" : v.c_str());
         };
         char buf[64];
-        row("Ad", s.name);
+        row(T("Ad"), s.name);
         row("Firmware", s.firmware);
         snprintf(buf, sizeof(buf), "%d.%d.%d", s.protocol / 10000, s.protocol / 100 % 100, s.protocol % 100);
-        row("Protokol", s.protocol ? buf : "");
-        row("Seri no", s.serial);
+        row(T("Protokol"), s.protocol ? buf : "");
+        row(T("Seri no"), s.serial);
         snprintf(buf, sizeof(buf), "%04X:%04X", s.vid, s.pid);
         row("USB", buf);
-        snprintf(buf, sizeof(buf), "%.3f mm adım  ·  en fazla %.2f mm", s.precision / 1000.f, s.maxTravel / 1000.f);
-        row("Hassasiyet", buf);
+        snprintf(buf, sizeof(buf), T("%.3f mm adım  ·  en fazla %.2f mm"), s.precision / 1000.f, s.maxTravel / 1000.f);
+        row(T("Hassasiyet"), buf);
         EndCard();
 
         ImGui::TableNextColumn();
@@ -1823,10 +1881,10 @@ void DeviceTab() {
             s.pollingIndex = poll;
             g_kb.Send(CmdPack(POLLING_RATE, static_cast<uint8_t>(poll)));
         }
-        NoSelectionHint("Hz. Değiştirince klavye yeniden başlar; program otomatik yeniden bağlanır.");
+        NoSelectionHint(T("Hz. Değiştirince klavye yeniden başlar; program otomatik yeniden bağlanır."));
         if (s.sysMode >= 0) {
             ImGui::Spacing();
-            CardTitle("İşletim sistemi");
+            CardTitle(T("İşletim sistemi"));
             static const char* const kSys[] = {"Windows", "macOS"};
             int sys = s.sysMode;
             if (Segmented("sys", kSys, 2, &sys, ImGui::GetContentRegionAvail().x)) {
@@ -1840,36 +1898,35 @@ void DeviceTab() {
 
     ImGui::Spacing();
     BeginCard("reset");
-    CardTitle("Fabrika ayarları");
+    CardTitle(T("Fabrika ayarları"));
     if (!g_confirmReset) {
-        NoSelectionHint("Tuş atamaları, performans, gelişmiş tuşlar ve ışık ayarları klavyenin varsayılanlarına döner.");
+        NoSelectionHint(T("Tuş atamaları, performans, gelişmiş tuşlar ve ışık ayarları klavyenin varsayılanlarına döner."));
         ImGui::Spacing();
-        if (ImGui::Button("Fabrika ayarlarına dön…", ImVec2(fs * 13, ImGui::GetFrameHeight() * 1.2f))) {
+        if (ImGui::Button(T("Fabrika ayarlarına dön…"), ImVec2(fs * 13, ImGui::GetFrameHeight() * 1.2f))) {
             g_confirmReset = true;
         }
     } else {
-        ImGui::TextColored(ImVec4(1, 0.55f, 0.35f, 1), "Emin misiniz? Bu işlem geri alınamaz.");
+        ImGui::TextColored(ImVec4(1, 0.55f, 0.35f, 1), T("Emin misiniz? Bu işlem geri alınamaz."));
         ImGui::Spacing();
-        if (DangerButton("Evet, sıfırla", ImVec2(fs * 9, 0))) {
+        if (DangerButton(T("Evet, sıfırla"), ImVec2(fs * 9, 0))) {
             g_kb.Send(CmdPack(FACTORY_RESET), 1500);
             g_kb.ReloadAll();
             g_confirmReset = false;
         }
         ImGui::SameLine();
-        if (ImGui::Button("Vazgeç", ImVec2(fs * 7, ImGui::GetFrameHeight() * 1.2f))) g_confirmReset = false;
+        if (ImGui::Button(T("Vazgeç"), ImVec2(fs * 7, ImGui::GetFrameHeight() * 1.2f))) g_confirmReset = false;
     }
     EndCard();
 
     PageSide();
     BeginCard("calib");
-    CardTitle("Kalibrasyon");
+    CardTitle(T("Kalibrasyon"));
     const bool cal = g_kb.GetLiveMode() == LiveMode::Calibration;
     if (!cal) {
-        NoSelectionHint("Tuşlar yanlış algılanıyorsa kalibrasyon yapın: başlattıktan sonra her tuşa sonuna kadar "
-                        "basıp bırakın. Tamamlanan tuşlar klavye görselinde yeşile döner.");
+        NoSelectionHint(T("Tuşlar yanlış algılanıyorsa kalibrasyon yapın: başlattıktan sonra her tuşa sonuna kadar basıp bırakın. Tamamlanan tuşlar klavye görselinde yeşile döner."));
         ImGui::Spacing();
         ImGui::BeginDisabled(!Ready());
-        if (PrimaryButton("Kalibrasyonu başlat", ImVec2(-FLT_MIN, 0))) g_kb.SetLiveMode(LiveMode::Calibration);
+        if (PrimaryButton(T("Kalibrasyonu başlat"), ImVec2(-FLT_MIN, 0))) g_kb.SetLiveMode(LiveMode::Calibration);
         ImGui::EndDisabled();
     } else {
         int done = 0, total = 0;
@@ -1878,17 +1935,416 @@ void DeviceTab() {
             if (s.keys[kv].liveTravel + 10 >= s.KeyMaxTravel(s.keys[kv])) ++done;
         }
         char buf2[32];
-        snprintf(buf2, sizeof(buf2), "%d / %d tuş", done, total);
+        snprintf(buf2, sizeof(buf2), T("%d / %d tuş"), done, total);
         ImGui::ProgressBar(total ? done / static_cast<float>(total) : 0.f, ImVec2(-FLT_MIN, ImGui::GetFrameHeight()),
                            buf2);
         ImGui::Spacing();
-        if (PrimaryButton("Kaydet ve bitir", ImVec2(-FLT_MIN, 0))) g_kb.SetLiveMode(LiveMode::Off);
+        if (PrimaryButton(T("Kaydet ve bitir"), ImVec2(-FLT_MIN, 0))) g_kb.SetLiveMode(LiveMode::Off);
     }
     EndCard();
+    ImGui::Spacing();
+    AboutCard();
     EndPage();
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Self-test (`Slice75HE.exe --selftest <log file>`): reversible write / read-back checks on the connected keyboard.
+// Every step changes a setting on the K (and L) key, reads it back from the device, and later restores the
+// original value, so the keyboard ends up exactly as it started.
+
+struct SelfTestStep {
+    std::string name;
+    std::function<bool()> act;           // returns false to skip the step
+    std::function<std::string()> check;  // empty string = pass
+    DWORD waitMs = 250;
+};
+
+std::wstring g_selfTestLog;
+std::vector<SelfTestStep> g_steps;
+size_t g_stepIdx = 0;
+bool g_stepActive = false;
+bool g_selfTestBuilt = false;
+DWORD g_stepAt = 0, g_selfTestStart = 0;
+std::string g_report;
+int g_pass = 0, g_fail = 0, g_skip = 0;
+
+void Log(const std::string& line) { g_report += line + "\n"; }
+
+std::string Hex(unsigned v) {
+    char b[16];
+    snprintf(b, sizeof(b), "0x%X", v);
+    return b;
+}
+
+std::string Expect(const char* what, unsigned got, unsigned want) {
+    return got == want ? std::string() : std::string(what) + " got " + Hex(got) + " want " + Hex(want) + "; ";
+}
+
+void FinishSelfTest() {
+    char sum[96];
+    snprintf(sum, sizeof(sum), "\nRESULT: %d passed, %d failed, %d skipped\n", g_pass, g_fail, g_skip);
+    std::ofstream f(g_selfTestLog, std::ios::binary | std::ios::trunc);
+    f << g_report << sum;
+    g_selfTestLog.clear();
+    PostMessageW(g_hwnd, WM_CLOSE, 0, 0);
+}
+
+void BuildSelfTest() {
+    DeviceState& s = S();
+    constexpr uint8_t K = 0x0E, L = 0x0F;  // the K and L keys
+    constexpr uint16_t kSentinel = 0xBEEF;
+    char head[160];
+    snprintf(head, sizeof(head), "Slice75 HE Native %s self-test | device %04X:%04X | %s | protocol %d.%d.%d",
+             APP_VERSION_STR, s.vid, s.pid, s.firmware.c_str(), s.protocol / 10000, s.protocol / 100 % 100,
+             s.protocol % 100);
+    Log(head);
+    if (!s.keys[K].present || !s.keys[L].present) {
+        Log("FAIL test keys K/L not present in the matrix");
+        ++g_fail;
+        return;
+    }
+    const KeyState oK = s.keys[K], oL = s.keys[L];
+    const uint16_t oAct = s.globalActuation, oDp = s.globalDeadPress, oDr = s.globalDeadRelease;
+    const bool wide = s.WideAdvanced();
+    auto key = [](uint8_t kv) -> KeyState& { return S().keys[kv]; };
+    auto mode = [](uint8_t touch, uint8_t adv) { return static_cast<uint16_t>((touch << 4) | adv); };
+    auto u8f = [](int f) { return static_cast<uint8_t>(f); };
+    const bool advFree = oK.advType == ADV_NONE && oL.advType == ADV_NONE;
+    bool anyMacro = false;
+    for (uint8_t kv : s.AllKeys()) anyMacro |= s.keys[kv].advType == ADV_MACRO;
+
+    auto restoreAdv = [=](std::initializer_list<uint8_t> kvs) {
+        std::vector<KeyRecord> recs;
+        for (uint8_t kv : kvs) {
+            const KeyState& o = kv == K ? oK : oL;
+            recs.push_back({kv, F_MODE, mode(o.touchMode, ADV_NONE)});
+        }
+        g_kb.WriteKeyRecords(recs);
+        for (uint8_t kv : kvs) {
+            key(kv).advType = 15;
+            g_kb.ReadFields(kv, {F_MODE});
+        }
+        return true;
+    };
+    auto advCleared = [=](std::initializer_list<uint8_t> kvs) {
+        std::string e;
+        for (uint8_t kv : kvs) e += Expect(kv == K ? "K adv" : "L adv", key(kv).advType, ADV_NONE);
+        return e;
+    };
+
+    g_steps.push_back({"keymap: write Fn3 layer",
+                       [=] {
+                           g_kb.WriteKeyRecords({{K, u8f(F_FN0 + 3), 0x1D}});
+                           key(K).layers[3] = kSentinel;
+                           g_kb.ReadFields(K, {u8f(F_FN0 + 3)});
+                           return true;
+                       },
+                       [=] { return Expect("Fn3", key(K).layers[3], 0x1D); }});
+    g_steps.push_back({"keymap: restore Fn3 layer",
+                       [=] {
+                           g_kb.WriteKeyRecords({{K, u8f(F_FN0 + 3), oK.layers[3]}});
+                           key(K).layers[3] = kSentinel;
+                           g_kb.ReadFields(K, {u8f(F_FN0 + 3)});
+                           return true;
+                       },
+                       [=] { return Expect("Fn3", key(K).layers[3], oK.layers[3]); }});
+    g_steps.push_back({"performance: per-key actuation 1.235 mm",
+                       [=] {
+                           g_kb.WriteKeyRecords({{K, F_MODE, mode(TOUCH_SINGLE, oK.advType)}, {K, F_DB0, 1235}});
+                           key(K).touchMode = 15;
+                           key(K).db[0] = kSentinel;
+                           g_kb.ReadFields(K, {F_MODE, F_DB0});
+                           return true;
+                       },
+                       [=] { return Expect("touch", key(K).touchMode, TOUCH_SINGLE) + Expect("db0", key(K).db[0], 1235); }});
+    g_steps.push_back({"performance: rapid trigger 0.155 / 0.255 mm",
+                       [=] {
+                           g_kb.WriteKeyRecords({{K, F_MODE, mode(TOUCH_RAPID, oK.advType)},
+                                                 {K, F_RT_PRESS, 155},
+                                                 {K, F_RT_RELEASE, 255}});
+                           key(K).touchMode = 15;
+                           key(K).rtPress = key(K).rtRelease = kSentinel;
+                           g_kb.ReadFields(K, {F_MODE, F_RT_PRESS, F_RT_RELEASE});
+                           return true;
+                       },
+                       [=] {
+                           return Expect("touch", key(K).touchMode, TOUCH_RAPID) + Expect("rtp", key(K).rtPress, 155) +
+                                  Expect("rtr", key(K).rtRelease, 255);
+                       }});
+    g_steps.push_back({"performance: per-key deadzones 0.15 / 0.25 mm",
+                       [=] {
+                           if (!S().SignalDead()) return false;
+                           g_kb.WriteKeyRecords({{K, F_DEAD_PRESS, 150}, {K, F_DEAD_RELEASE, 250}});
+                           key(K).deadPress = key(K).deadRelease = kSentinel;
+                           g_kb.ReadFields(K, {F_DEAD_PRESS, F_DEAD_RELEASE});
+                           return true;
+                       },
+                       [=] { return Expect("dp", key(K).deadPress, 150) + Expect("dr", key(K).deadRelease, 250); }});
+    g_steps.push_back({"performance: restore original values",
+                       [=] {
+                           std::vector<KeyRecord> recs = {{K, F_MODE, mode(oK.touchMode, oK.advType)},
+                                                          {K, F_DB0, oK.db[0]},
+                                                          {K, F_RT_PRESS, oK.rtPress},
+                                                          {K, F_RT_RELEASE, oK.rtRelease}};
+                           if (S().SignalDead()) {
+                               recs.push_back({K, F_DEAD_PRESS, oK.deadPress});
+                               recs.push_back({K, F_DEAD_RELEASE, oK.deadRelease});
+                           }
+                           g_kb.WriteKeyRecords(recs);
+                           KeyState& k = key(K);
+                           k.touchMode = 15;
+                           k.db[0] = k.rtPress = k.rtRelease = k.deadPress = k.deadRelease = kSentinel;
+                           g_kb.ReadFields(K, {F_MODE, F_DB0, F_RT_PRESS, F_RT_RELEASE, F_DEAD_PRESS, F_DEAD_RELEASE});
+                           return true;
+                       },
+                       [=] {
+                           const KeyState& k = key(K);
+                           std::string e = Expect("touch", k.touchMode, oK.touchMode) + Expect("db0", k.db[0], oK.db[0]) +
+                                           Expect("rtp", k.rtPress, oK.rtPress) + Expect("rtr", k.rtRelease, oK.rtRelease);
+                           if (S().SignalDead()) {
+                               e += Expect("dp", k.deadPress, oK.deadPress) + Expect("dr", k.deadRelease, oK.deadRelease);
+                           }
+                           return e;
+                       }});
+    g_steps.push_back({"global: rewrite actuation / deadzones unchanged",
+                       [=] {
+                           g_kb.WriteGlobalDb();
+                           S().globalActuation = S().globalDeadPress = S().globalDeadRelease = kSentinel;
+                           g_kb.Send(DbPack(false, 0, 0, 0));
+                           return true;
+                       },
+                       [=] {
+                           return Expect("act", S().globalActuation, oAct) + Expect("dp", S().globalDeadPress, oDp) +
+                                  Expect("dr", S().globalDeadRelease, oDr);
+                       }});
+    g_steps.push_back({"advanced: mod-tap (hold L-Ctrl, tap K, 200 ms)",
+                       [=] {
+                           if (!advFree) return false;
+                           g_kb.Send(MtPack(wide, K, 0xE0, 0x0E, 200));
+                           KeyState& k = key(K);
+                           k.advType = 15;
+                           k.dks[0] = k.dks[1] = kSentinel;
+                           k.mtDelayMs = 0;
+                           g_kb.ReadAdvanced(K);
+                           return true;
+                       },
+                       [=] {
+                           const KeyState& k = key(K);
+                           return Expect("adv", k.advType, ADV_MT) + Expect("hold", k.dks[0], 0xE0) +
+                                  Expect("tap", k.dks[1], 0x0E) + Expect("delay", k.mtDelayMs, 200);
+                       }});
+    g_steps.push_back({"advanced: remove mod-tap", [=] { return advFree && restoreAdv({K}); },
+                       [=] { return advCleared({K}); }});
+    g_steps.push_back({"advanced: END (send Z on release)",
+                       [=] {
+                           if (!advFree) return false;
+                           g_kb.Send(EndPack(wide, K, 0x1D));
+                           key(K).advType = 15;
+                           key(K).dks[0] = kSentinel;
+                           g_kb.ReadAdvanced(K);
+                           return true;
+                       },
+                       [=] { return Expect("adv", key(K).advType, ADV_END) + Expect("code", key(K).dks[0], 0x1D); }});
+    g_steps.push_back({"advanced: remove END", [=] { return advFree && restoreAdv({K}); },
+                       [=] { return advCleared({K}); }});
+    g_steps.push_back({"advanced: toggle (K, 300 ms)",
+                       [=] {
+                           if (!advFree) return false;
+                           g_kb.Send(TglPack(wide, K, 0x0E, 300));
+                           key(K).advType = 15;
+                           key(K).dks[0] = kSentinel;
+                           key(K).mtDelayMs = 0;
+                           g_kb.ReadAdvanced(K);
+                           return true;
+                       },
+                       [=] {
+                           return Expect("adv", key(K).advType, ADV_TGL) + Expect("code", key(K).dks[0], 0x0E) +
+                                  Expect("delay", key(K).mtDelayMs, 300);
+                       }});
+    g_steps.push_back({"advanced: remove toggle", [=] { return advFree && restoreAdv({K}); },
+                       [=] { return advCleared({K}); }});
+    g_steps.push_back({"advanced: MPT (A/B/C at 0.5/1.5/2.5 mm)",
+                       [=] {
+                           if (!advFree) return false;
+                           const uint16_t codes[3] = {0x04, 0x05, 0x06};
+                           const uint16_t depths[3] = {500, 1500, 2500};
+                           g_kb.Send(MptPack(wide, K, codes, depths));
+                           KeyState& k = key(K);
+                           k.advType = 15;
+                           for (int i = 0; i < 3; ++i) k.dks[i] = k.db[1 + i] = kSentinel;
+                           g_kb.ReadAdvanced(K);
+                           return true;
+                       },
+                       [=] {
+                           const KeyState& k = key(K);
+                           return Expect("adv", k.advType, ADV_MPT) + Expect("k0", k.dks[0], 0x04) +
+                                  Expect("k2", k.dks[2], 0x06) + Expect("d0", k.db[1], 500) + Expect("d2", k.db[3], 2500);
+                       }});
+    g_steps.push_back({"advanced: remove MPT", [=] { return advFree && restoreAdv({K}); },
+                       [=] { return advCleared({K}); }});
+    g_steps.push_back({"advanced: DKS (4 keys, masks, 1.2 / 3.0 mm)",
+                       [=] {
+                           if (!advFree) return false;
+                           const uint16_t codes[4] = {0x04, 0x05, 0x06, 0x07};
+                           const uint8_t trps[4] = {0x01, 0x04, 0x20, 0x80};
+                           g_kb.Send(DksPack(wide, K, codes, trps, 1200, 3000));
+                           KeyState& k = key(K);
+                           k.advType = 15;
+                           for (int i = 0; i < 4; ++i) {
+                               k.dks[i] = kSentinel;
+                               k.trps[i] = 0;
+                           }
+                           k.db[1] = k.db[2] = kSentinel;
+                           g_kb.ReadAdvanced(K);
+                           return true;
+                       },
+                       [=] {
+                           const KeyState& k = key(K);
+                           return Expect("adv", k.advType, ADV_DKS) + Expect("k3", k.dks[3], 0x07) +
+                                  Expect("t1", k.trps[1], 0x04) + Expect("t3", k.trps[3], 0x80) +
+                                  Expect("db1", k.db[1], 1200) + Expect("db2", k.db[3], 3000) +
+                                  Expect("mid", k.db[2], 2100);
+                       }});
+    g_steps.push_back({"advanced: remove DKS", [=] { return advFree && restoreAdv({K}); },
+                       [=] { return advCleared({K}); }});
+    g_steps.push_back({"advanced: RS pair K+L",
+                       [=] {
+                           if (!advFree) return false;
+                           g_kb.Send(RsPack(K, L));
+                           key(K).advType = key(L).advType = 15;
+                           key(K).dks[0] = kSentinel;
+                           g_kb.ReadAdvanced(K);
+                           g_kb.ReadAdvanced(L);
+                           return true;
+                       },
+                       [=] {
+                           return Expect("K adv", key(K).advType, ADV_RS) + Expect("L adv", key(L).advType, ADV_RS) +
+                                  Expect("partner", key(K).dks[0], L);
+                       }});
+    g_steps.push_back({"advanced: remove RS pair", [=] { return advFree && restoreAdv({K, L}); },
+                       [=] { return advCleared({K, L}); }});
+    g_steps.push_back({"advanced: SOCD v3 pair K+L",
+                       [=] {
+                           if (!advFree || S().SocdVersion() != 3) return false;
+                           g_kb.Send(SocdV3Pack(true, K, L, 0, 0, 0, 0));
+                           key(K).advType = 15;
+                           S().socd.valid = false;
+                           g_kb.ReadAdvanced(K);
+                           g_kb.Send(SocdV3Pack(false, K, 0, 0, 0, 0, 0), 10);
+                           return true;
+                       },
+                       [=] {
+                           std::string e = Expect("K adv", key(K).advType, ADV_SOCD);
+                           if (!S().socd.valid) return e + "no SOCD read-back; ";
+                           return e + Expect("socd key2", S().socd.key2, L);
+                       }});
+    g_steps.push_back({"advanced: remove SOCD pair",
+                       [=] { return advFree && S().SocdVersion() == 3 && restoreAdv({K, L}); },
+                       [=] { return advCleared({K, L}); }});
+    g_steps.push_back({"macro: bind 2-step macro to K",
+                       [=] {
+                           if (!advFree || anyMacro || !S().MacroV2()) return false;
+                           const MacroEvent ev[2] = {{0x04, true, 0}, {0x04, false, 30}};
+                           g_kb.Send(MacroPack(true, 0, ev, 2));
+                           g_kb.WriteKeyRecords({{K, F_MODE, mode(oK.touchMode, ADV_MACRO)}});
+                           g_kb.Send(MacroModePack(true, K, 0, 2, 1, 3, 120));
+                           key(K).advType = 15;
+                           S().macroMode.valid = false;
+                           g_kb.ReadFields(K, {F_MODE});
+                           g_kb.Send(MacroModePack(false, K, 0, 0, 0, 0, 0), 10);
+                           return true;
+                       },
+                       [=] {
+                           const auto& mm = S().macroMode;
+                           std::string e = Expect("adv", key(K).advType, ADV_MACRO);
+                           if (!mm.valid) return e + "no macro-mode read-back; ";
+                           return e + Expect("mode", mm.mode, 1) + Expect("repeat", mm.repeatCount, 3) +
+                                  Expect("delay", mm.repeatDelay, 120);
+                       }});
+    g_steps.push_back({"macro: unbind",
+                       [=] { return advFree && !anyMacro && S().MacroV2() && restoreAdv({K}); },
+                       [=] { return advCleared({K}); }});
+    g_steps.push_back({"lighting: per-key colour write",
+                       [=] {
+                           uint8_t kv = K;
+                           uint32_t c = 0x123456;
+                           g_kb.Send(KrgbPack(true, &kv, &c, 1));
+                           key(K).color = kSentinel;
+                           g_kb.Send(KrgbPack(false, &kv, nullptr, 1));
+                           return true;
+                       },
+                       [=] { return Expect("rgb", key(K).color, 0x123456); }});
+    g_steps.push_back({"lighting: restore per-key colour",
+                       [=] {
+                           uint8_t kv = K;
+                           uint32_t c = oK.color;
+                           g_kb.Send(KrgbPack(true, &kv, &c, 1));
+                           key(K).color = kSentinel;
+                           g_kb.Send(KrgbPack(false, &kv, nullptr, 1));
+                           return true;
+                       },
+                       [=] { return Expect("rgb", key(K).color, oK.color); }});
+    static unsigned framesBefore = 0;
+    g_steps.push_back({"live: travel stream",
+                       [=] {
+                           framesBefore = g_kb.LiveFrames();
+                           g_kb.SetLiveMode(LiveMode::TravelTest);
+                           return true;
+                       },
+                       [=] {
+                           unsigned frames = g_kb.LiveFrames() - framesBefore;
+                           g_kb.SetLiveMode(LiveMode::Off);
+                           uint16_t maxT = 0;
+                           for (uint8_t kv : S().AllKeys()) maxT = std::max(maxT, S().keys[kv].liveTravel);
+                           std::string e = frames >= 4 ? "" : "only " + std::to_string(frames) + " live frames; ";
+                           if (maxT > 4500) e += "implausible travel " + std::to_string(maxT) + " um; ";
+                           return e;
+                       },
+                       1000});
+}
+
+void SelfTestTick() {
+    if (g_selfTestLog.empty()) return;
+    const DWORD now = GetTickCount();
+    if (!g_selfTestBuilt) {
+        if (g_selfTestStart == 0) g_selfTestStart = now;
+        if (!Ready()) {
+            if (now - g_selfTestStart > 20000) {
+                Log("FAIL keyboard did not become ready: " + g_kb.StatusText());
+                ++g_fail;
+                FinishSelfTest();
+            }
+            return;
+        }
+        // Snapshot the originals only after every read (key colours come last) has been answered.
+        if (g_kb.Busy() || now - g_selfTestStart < 3000) return;
+        BuildSelfTest();
+        g_selfTestBuilt = true;
+    }
+    if (g_kb.Busy() && g_kb.GetLiveMode() == LiveMode::Off) return;
+    if (g_stepIdx >= g_steps.size()) {
+        FinishSelfTest();
+        return;
+    }
+    SelfTestStep& st = g_steps[g_stepIdx];
+    if (!g_stepActive) {
+        if (!st.act()) {
+            Log("SKIP " + st.name);
+            ++g_skip;
+            ++g_stepIdx;
+            return;
+        }
+        g_stepActive = true;
+        g_stepAt = now;
+        return;
+    }
+    if (now - g_stepAt < st.waitMs) return;
+    std::string err = st.check();
+    Log((err.empty() ? "PASS " : "FAIL ") + st.name + (err.empty() ? "" : ": " + err));
+    ++(err.empty() ? g_pass : g_fail);
+    ++g_stepIdx;
+    g_stepActive = false;
+}
 
 void TopBar() {
     DeviceState& s = S();
@@ -1900,24 +2356,42 @@ void TopBar() {
                                                                               : ImVec4(0.95f, 0.75f, 0.3f, 1);
     ImGui::TextColored(col, "●");
     ImGui::SameLine();
-    ImGui::TextUnformatted(g_kb.StatusText().c_str());
+    ImGui::TextUnformatted(T(g_kb.StatusText().c_str()));
     if (s.conn == ConnState::Loading && s.keysTotalPackets > 0) {
         ImGui::SameLine();
         ImGui::ProgressBar(s.keysLoadedPackets / static_cast<float>(s.keysTotalPackets),
                            ImVec2(ImGui::GetFontSize() * 8, 0));
     }
 
+    const float fs = ImGui::GetFontSize();
+    const float gap = ImGui::GetStyle().ItemSpacing.x;
     float right = ImGui::GetContentRegionMax().x;
-    float w = ImGui::GetFontSize() * (s.configId >= 0 ? 19 : 7);
+    float w = fs * 7 + gap + fs * 8 + (s.configId >= 0 ? fs * 8.5f + gap : 0);
     ImGui::SameLine(right - w);
+
+    // Language selector; the choice is saved and the font atlas is rebuilt for the new glyphs.
+    ImGui::SetNextItemWidth(fs * 7);
+    if (ImGui::BeginCombo("##lang", LangName(GetLanguage()))) {
+        for (int i = 0; i < static_cast<int>(Lang::Count); ++i) {
+            Lang l = static_cast<Lang>(i);
+            if (ImGui::Selectable(LangName(l), GetLanguage() == l) && GetLanguage() != l) {
+                SetLanguage(l);
+                SaveSettings();
+                AppRequestFontReload();
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", T("Dil"));
+    ImGui::SameLine();
     if (s.configId >= 0) {
-        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 7);
-        char cur[16];
-        snprintf(cur, sizeof(cur), "Profil %d", s.configId + 1);
+        ImGui::SetNextItemWidth(fs * 8.5f);
+        char cur[48];
+        snprintf(cur, sizeof(cur), T("Profil %d"), s.configId + 1);
         if (ImGui::BeginCombo("##profile", cur)) {
             for (int i = 0; i < 4; ++i) {
-                char item[16];
-                snprintf(item, sizeof(item), "Profil %d", i + 1);
+                char item[48];
+                snprintf(item, sizeof(item), T("Profil %d"), i + 1);
                 if (ImGui::Selectable(item, s.configId == i) && s.configId != i) {
                     s.configId = i;
                     g_kb.Send(CmdPack(CONFIG_ID, static_cast<uint8_t>(i)), 300);
@@ -1929,10 +2403,10 @@ void TopBar() {
         ImGui::SameLine();
     }
     if (s.conn == ConnState::NoDevice || s.conn == ConnState::Error) {
-        if (ImGui::Button("Yeniden ara", ImVec2(ImGui::GetFontSize() * 7, 0))) g_kb.Rescan();
+        if (ImGui::Button(T("Yeniden ara"), ImVec2(fs * 8, 0))) g_kb.Rescan();
     } else {
         ImGui::BeginDisabled(s.conn != ConnState::Ready);
-        if (ImGui::Button("Yeniden oku", ImVec2(ImGui::GetFontSize() * 7, 0))) g_kb.ReloadAll();
+        if (ImGui::Button(T("Yeniden oku"), ImVec2(fs * 8, 0))) g_kb.ReloadAll();
         ImGui::EndDisabled();
     }
 }
@@ -1941,6 +2415,16 @@ void TopBar() {
 
 // -------------------------------------------------------------------------------------------------------------------
 // Host interface
+
+void AppEarlyInit() {
+    LoadSettings();
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    for (int i = 1; argv && i + 1 < argc; ++i) {
+        if (wcscmp(argv[i], L"--selftest") == 0) g_selfTestLog = argv[i + 1];
+    }
+    LocalFree(argv);
+}
 
 void AppInit(HWND hwnd) {
     g_hwnd = hwnd;
@@ -2002,9 +2486,7 @@ void AppDraw() {
     DeviceState& s = S();
     if (s.conn == ConnState::NoDevice || s.conn == ConnState::Error || s.conn == ConnState::Bootloader) {
         ImGui::Dummy(ImVec2(0, ImGui::GetFontSize() * 4));
-        ImGui::TextWrapped("Slice75 HE klavyeyi USB kablosuyla bağlayın. Program klavyeyi otomatik olarak bulur.\n\n"
-                           "Tarayıcıda Chilkey sürücü sayfası açıksa kapatın; aynı anda yalnızca bir program "
-                           "klavyeyle konuşmalıdır.");
+        ImGui::TextWrapped(T("Slice75 HE klavyeyi USB kablosuyla bağlayın. Program klavyeyi otomatik olarak bulur.\n\nTarayıcıda Chilkey sürücü sayfası açıksa kapatın; aynı anda yalnızca bir program klavyeyle konuşmalıdır."));
         ImGui::End();
         return;
     }
@@ -2026,7 +2508,8 @@ void AppDraw() {
             {"Işık", Tab::Lighting, LightingTab},         {"Cihaz", Tab::Device, DeviceTab},
         };
         for (const TabDef& t : kTabs) {
-            if (ImGui::BeginTabItem(t.name)) {
+            std::string tabLabel = std::string(T(t.name)) + "###" + t.name;  // stable ID across languages
+            if (ImGui::BeginTabItem(tabLabel.c_str())) {
                 if (g_tab != t.tab) {
                     // Leaving a tab stops its live stream (calibration is saved on stop).
                     if (g_tab == Tab::Performance && g_kb.GetLiveMode() == LiveMode::TravelTest) {
@@ -2062,7 +2545,8 @@ bool AppOnTimer(UINT_PTR id) {
     if (id != kAppTickTimer) return false;
     ConnState before = S().conn;
     g_kb.Tick();
-    if (S().conn != before) AppRequestRedraw();
+    SelfTestTick();
+    if (S().conn != before || !g_selfTestLog.empty()) AppRequestRedraw();
     return true;
 }
 
