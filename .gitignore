@@ -1,0 +1,14 @@
+# Build output
+/bin/
+/build/
+*.obj
+*.res
+*.pdb
+*.ilk
+
+# Dear ImGui is downloaded by build.ps1
+/third_party/
+
+# Local reverse-engineering material (vendor files are not redistributed)
+/web/
+/ref/
